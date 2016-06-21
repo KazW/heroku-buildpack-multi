@@ -4,5 +4,5 @@ if [ -e "$1/last_release.out" ]; then
   cat "$1/last_release.out"
   rm "$1/last_release.out"
 else
-  echo "multi-buildpack"
+  echo "--- {}\n"
 fi

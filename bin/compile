@@ -1,72 +1,100 @@
-#!/usr/bin/env bash
+#!/usr/bin/env ruby
 
-set -e
+# Load libraries
+require 'uri'
+require 'tmpdir'
+require 'fileutils'
+require 'yaml'
 
-function indent() {
-  c='s/^/       /'
-  case $(uname) in
-    Darwin) sed -l "$c";;
-    *)      sed -u "$c";;
-  esac
-}
+# Allow git commands to function locally.
+ENV['GIT_DIR'] = nil
 
-unset GIT_DIR
+# Variables
+@last_framework = "None"
+@buildpacks     = []
+@frameworks     = []
+@release        = {}
+@last_release   = {}
 
-for BUILDPACK in $(cat $1/.buildpacks); do
-  dir=$(mktemp -t buildpackXXXXX)
-  rm -rf $dir
+def parse_buildpack_file
+  buildpack_file = "#{ARGV[0]}/.buildpacks"
+  return @buildpacks unless File.exists?(buildpack_file)
 
-  url=${BUILDPACK%#*}
-  branch=${BUILDPACK#*#}
+  File.open(buildpack_file).each_line.with_index(1) do |line,line_number|
+    line.strip!
+    next if line.empty? || line[0] == "#"
+    begin
+      uri = URI.parse(line)
+    rescue URI::InvalidURIError
+      print "WARNING: Line #{line_number} of the .buildpacks file is invalid!\n"
+      next
+    end
 
-  if [ "$branch" == "$url" ]; then
-    branch=""
-  fi
+    @buildpacks << {
+      'url' => uri.to_s.split('#').first,
+      'ref' => uri.fragment
+    }
+  end
+end
 
-  if [ "$url" != "" ]; then
-    echo "=====> Downloading Buildpack: $url"
+def download_buildpack(dir, url, ref)
+  print "=====> Downloading Buildpack: #{url}\n"
 
-    if [[ "$url" =~ \.tgz$ ]]; then
-      mkdir -p "$dir"
-      curl -s "$url" | tar xvz -C "$dir" >/dev/null 2>&1
-    else
-      git clone $url $dir >/dev/null 2>&1
-      if [ -f "$dir/.gitmodules" ]; then
-        echo "=====> Detected git submodules. Initializing..."
-        (cd $dir && git submodule update --init --recursive)
-      fi
-    fi
-    cd $dir
+  if url =~ /\.tgz$/
+    Dir.mkdir dir
+    `curl -s "#{url}" | tar xvz -C "#{dir}" >/dev/null 2>&1`
+  else
+    `git clone "#{url}" "#{dir}" >/dev/null 2>&1`
+    Dir.chdir(dir){`git checkout "#{ref}" >/dev/null 2>&1`} unless ref.nil?
+    if File.exists?("#{dir}/.gitmodules")
+      print "=====> Detected git submodules. Initializing...\n"
+      Dir.chdir(dir){`git submodule update --init --recursive`}
+    end
+  end
+end
 
-    if [ "$branch" != "" ]; then
-      git checkout $branch >/dev/null 2>&1
-    fi
+def build_buildpack(dir)
+  Dir.chdir(dir) do
+    # Ensure buildpack entry points are executable.
+    `chmod -f +x ./bin/{detect,compile,release} || true`
 
-    # we'll get errors later if these are needed and don't exist
-    chmod -f +x $dir/bin/{detect,compile,release} || true
+    @last_framework = `./bin/detect "#{ARGV[0]}"`.strip
+    @frameworks << @last_framework
+    if $?.to_i.zero?
+      print "=====> Detected Framework: #{@last_framework}\n"
+      `./bin/compile "#{ARGV[0]}" "#{ARGV[1]}" "#{ARGV[2]}"`
+      exit(1) unless $?.to_i.zero?
+    end
+  end
+end
 
-    framework=$($dir/bin/detect $1)
+def export_environment(dir)
+  Hash[`source "#{dir}/export" && env`.split.map{|ev| ev.split('=')}].each do |key,val|
+    next if key.strip.empty? || val.strip.empty?
+    ENV[key] = val
+  end
+end
 
-    if [ $? == 0 ]; then
-      echo "=====> Detected Framework: $framework"
-      $dir/bin/compile $1 $2 $3
+def write_release(dir)
+  return unless File.exists?("#{dir}/bin/release")
+  @last_release = YAML.load(`#{dir}/bin/release "#{ARGV[0]}"`)
+  @release.merge(@last_release)
+end
 
-      if [ $? != 0 ]; then
-        exit 1
-      fi
+# Actually do the builds
+parse_buildpack_file
+@buildpacks.each do |buildpack|
+  dir = Dir.mktmpdir
+  FileUtils.rm_rf(dir)
 
-      # check if the buildpack left behind an environment for subsequent ones
-      if [ -e $dir/export ]; then
-        source $dir/export
-      fi
+  download_buildpack(dir, buildpack['url'], buildpack['ref'])
+  build_buildpack(dir)
+  export_environment(dir)
+  write_release(dir)
 
-      if [ -x $dir/bin/release ]; then
-        $dir/bin/release $1 > $1/last_pack_release.out
-      fi
-    fi
-  fi
-done
+  buildpack['framework'] = @last_framework
+  buildpack['release']   = @last_release
+end
 
-if [ -e $1/last_pack_release.out ]; then
-  echo "Using release configuration from last framework ($framework)."
-fi
+print "Using release info from framworks: #{@framworks.join(', ')}"
+File.write("#{ARGV[0]}/last_release.out", @release.to_yaml)
