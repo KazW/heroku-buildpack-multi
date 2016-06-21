@@ -1,10 +1,10 @@
-# heroku-buildpack-multi
+# multi-buildpack
 
 Use multiple buildpacks on your app
 
 ## Usage
 
-    $ heroku buildpacks:set https://github.com/kazw/heroku-buildpack-multi.git
+    $ heroku buildpacks:set https://github.com/kazw/multi-buildpack.git
 
     $ cat .buildpacks
     https://github.com/heroku/heroku-buildpack-nodejs.git#0198c71daa8
