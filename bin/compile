@@ -96,5 +96,5 @@ parse_buildpack_file
   buildpack['release']   = @last_release
 end
 
-print "Using release info from framworks: #{@framworks.join(', ')}"
+print "Using release info from framworks: #{@frameworks.join(', ')}"
 File.write("#{ARGV[0]}/last_release.out", @release.to_yaml)
