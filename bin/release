@@ -1,8 +1,8 @@
-#!/usr/bin/env bash
+#!/usr/bin/env ruby
+release_file = "#{ARGV[0]}/last_release.out"
 
-if [ -e "$1/last_release.out" ]; then
-  cat "$1/last_release.out"
-  rm "$1/last_release.out"
+if File.exists?(release_file)
+  print File.read(release_file)
 else
-  echo "--- {}\n"
-fi
+  print "--- {}\n"
+end

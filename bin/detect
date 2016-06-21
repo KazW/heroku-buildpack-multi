@@ -1,9 +1,8 @@
-#!/usr/bin/env bash
+#!/usr/bin/env ruby
 
-if [ -f "$1/.buildpacks" ]; then
-  echo "multi-buildpack"
-  exit 0
+if File.exists?("#{ARGV[0]}/.buildpacks")
+  print 'multi-buildpack'
 else
-  echo "No .buildpacks file."
+  print 'No .buildpacks file.'
   exit 1
-fi
+end
