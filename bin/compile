@@ -69,7 +69,12 @@ def build_buildpack(dir)
 end
 
 def export_environment(dir)
-  Hash[`source "#{dir}/export" && env`.split.map{|ev| ev.split('=')}].each do |key,val|
+  return unless File.exists?("#{dir}/export")
+  Hash[
+    `. "#{dir}/export" >/dev/null 2>&1 && env`.
+    split.
+    map{|ev| ev.split('=', 2)}
+  ].each do |key,val|
     next if key.strip.empty? || val.strip.empty?
     ENV[key] = val
   end
